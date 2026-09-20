@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ClothAR — Virtual Try-On</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,Arial;background:#0b1020;color:#fff}
+header{padding:18px 20px;background:#121a33;position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center}
+h1{margin:0;font-size:22px}.wrap{max-width:1050px;margin:auto;padding:20px}.card{background:#151e38;border:1px solid #293556;border-radius:18px;padding:18px;margin-bottom:18px}
+button,.btn{border:0;border-radius:12px;padding:11px 15px;background:#6d5dfc;color:#fff;font-weight:700;cursor:pointer}
+button.secondary{background:#293556}.danger{background:#c0392b}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+input,select{width:100%;padding:11px;border-radius:10px;border:1px solid #39476d;background:#0e162b;color:#fff;margin:6px 0 12px}
+label{font-size:13px;color:#b9c4df}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:15px}
+.hidden{display:none!important}.muted{color:#aab5cf;font-size:13px}.item{background:#0f172c;border-radius:14px;padding:12px}.item img{width:100%;height:190px;object-fit:contain;background:#fff;border-radius:10px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#qr{background:#fff;padding:12px;display:inline-block;border-radius:10px}#qr img{display:block}
+.cameraBox{position:relative;width:min(100%,560px);margin:auto;background:#000;border-radius:18px;overflow:hidden}
+#video{width:100%;display:block;transform:scaleX(-1)}#arCanvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;transform:scaleX(-1)}
+.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:#27365e;font-size:12px;margin:2px}
+.status{padding:10px;border-radius:10px;background:#10182d;margin:10px 0}
+.small{font-size:12px}.price{font-size:18px;font-weight:800}
+</style>
+</head>
+<body>
+<header><h1>👕 ClothAR</h1><span class="muted">Virtual Clothing Try-On</span></header>
+<div class="wrap">
+
+<div class="tabs">
+<button onclick="show('customer')">Customer</button>
+<button onclick="show('shop')">Shopkeeper</button>
+<button class="secondary" onclick="resetAll()">Reset Demo</button>
+</div>
+
+<section id="customer" class="card">
+<h2>Customer</h2>
+<div class="grid">
+<div><label>Shop ID</label><input id="shopId" placeholder="Example: SHOP-1001"></div>
+<div><label>Age</label><input id="age" type="number" min="1" max="100" placeholder="14"></div>
+<div><label>Gender</label><select id="gender"><option value="">Select</option><option>Female</option><option>Male</option><option>Unisex</option></select></div>
+</div>
+<div class="row"><button onclick="loadShop()">Load Shop</button><button class="secondary" onclick="openScanner()">Scan Shop QR</button></div>
+<div id="customerMsg" class="status muted">Enter the shop ID or scan its QR.</div>
+<div id="catalog" class="grid"></div>
+</section>
+
+<section id="shop" class="card hidden">
+<h2>Shopkeeper</h2>
+<div id="loginBox">
+<div class="grid">
+<div><label>Shopkeeper name</label><input id="loginName" placeholder="Your name"></div>
+<div><label>Password</label><input id="loginPass" type="password" placeholder="Demo password: 1234"></div>
+</div>
+<button onclick="login()">Login / Create Demo Shop</button>
+<p class="muted">This prototype stores data only in this browser. A real business version needs a server/database.</p>
+</div>
+
+<div id="dashboard" class="hidden">
+<div class="status">Logged in as <b id="shopName"></b> · Shop ID: <b id="myShopId"></b></div>
+<div class="grid">
+<div class="card">
+<h3>Add clothing</h3>
+<label>Name</label><input id="clothName" placeholder="Blue T-shirt">
+<label>Category</label><select id="clothCat"><option>T-shirt</option><option>Shirt</option><option>Kurti</option><option>Saree</option><option>Dress</option><option>Other</option></select>
+<label>Gender</label><select id="clothGender"><option>Unisex</option><option>Female</option><option>Male</option></select>
+<label>Minimum age</label><input id="minAge" type="number" value="10">
+<label>Maximum age</label><input id="maxAge" type="number" value="25">
+<label>Price</label><input id="clothPrice" type="number" value="499">
+<label>Garment PNG/JPG (transparent PNG works best)</label><input id="clothImage" type="file" accept="image/*">
+<button onclick="addCloth()">Add Clothing</button>
+</div>
+<div class="card">
+<h3>Your shop QR</h3>
+<div id="qr"></div>
+<p class="muted small">The QR points to this page with your shop ID. Deploy this HTML online for customers on other phones to scan it.</p>
+<button onclick="downloadQR()">Download QR</button>
+</div>
+</div>
+<h3>Your catalogue</h3><div id="shopCatalog" class="grid"></div>
+</div>
+</section>
+
+<section id="tryon" class="card hidden">
+<div class="row" style="justify-content:space-between"><h2 id="tryTitle">AR Try-On</h2><button class="secondary" onclick="stopAR()">Close</button></div>
+<div class="cameraBox">
+<video id="video" autoplay playsinline muted></video><canvas id="arCanvas"></canvas>
+</div>
+<div id="arStatus" class="status">Press Start Camera.</div>
+<div class="row">
+<button onclick="startAR()">📷 Start Camera</button>
+<button class="secondary" onclick="flipCamera()">Flip Camera</button>
+</div>
+<p class="muted">For best results, stand in good light and keep your upper body visible. Transparent clothing PNGs give the cleanest overlay.</p>
+</section>
+
+<section id="scanner" class="card hidden">
+<h2>Scan Shop QR</h2>
+<video id="qrVideo" autoplay playsinline muted style="width:100%;max-width:500px;border-radius:16px"></video>
+<canvas id="qrCanvas" class="hidden"></canvas>
+<div id="scanMsg" class="status">Point the camera at a shop QR.</div>
+<button class="secondary" onclick="closeScanner()">Close Scanner</button>
+</section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/qrcode.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+<script>
+const KEY='clothAR_demo_v1';
+let data=JSON.parse(localStorage.getItem(KEY)||'null')||{shops:{}};
+let currentShop=null,currentCloth=null,stream=null,qrStream=null,pose=null,camera=null,mirror=true;
+const $=id=>document.getElementById(id);
+function save(){localStorage.setItem(KEY,JSON.stringify(data))}
+function show(id){['customer','shop'].forEach(x=>$(x).classList.toggle('hidden',x!==id))}
+function msg(t){$('customerMsg').textContent=t}
+function uid(){return 'SHOP-'+Math.floor(100000+Math.random()*900000)}
+function login(){
+ const n=$('loginName').value.trim(); const p=$('loginPass').value;
+ if(!n||p!=='1234'){alert('For this demo enter a name and password 1234.');return}
+ const id=uid(); data.shops[id]={id,name:n,clothes:[]}; currentShop=id; save(); renderShop(); 
+}
+function renderShop(){
+ const s=data.shops[currentShop]; if(!s)return;
+ $('loginBox').classList.add('hidden');$('dashboard').classList.remove('hidden');
+ $('shopName').textContent=s.name;$('myShopId').textContent=s.id;
+ const base=location.href.split('#')[0]; const url=base+'?shop='+encodeURIComponent(s.id);
+ const qr=qrcode(0,'M');qr.addData(url);qr.make();
+ $('qr').innerHTML=qr.createImgTag(5,8);
+ $('shopCatalog').innerHTML=s.clothes.map((c,i)=>`<div class="item"><img src="${c.image}"><b>${esc(c.name)}</b><div class="price">₹${c.price}</div><span class="badge">${c.category}</span><span class="badge">${c.gender}</span><span class="badge">${c.min}-${c.max} yrs</span><br><button class="danger small" onclick="removeCloth(${i})">Delete</button></div>`).join('')||'<p class="muted">No clothes added yet.</p>';
+}
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+function addCloth(){
+ if(!currentShop)return;
+ const f=$('clothImage').files[0]; if(!f){alert('Choose a clothing image.');return}
+ const r=new FileReader();r.onload=()=>{
+  const c={name:$('clothName').value||'Clothing',category:$('clothCat').value,gender:$('clothGender').value,
+   min:+$('minAge').value||1,max:+$('maxAge').value||100,price:+$('clothPrice').value||0,image:r.result};
+  data.shops[currentShop].clothes.push(c);save();renderShop();
+ };r.readAsDataURL(f);
+}
+function removeCloth(i){data.shops[currentShop].clothes.splice(i,1);save();renderShop()}
+function loadShop(){
+ const id=$('shopId').value.trim();const s=data.shops[id];
+ if(!s){msg('Shop not found. Ask the shopkeeper for the correct QR/shop ID.');$('catalog').innerHTML='';return}
+ const age=+$('age').value||0,g=$('gender').value;
+ const clothes=s.clothes.filter(c=>(!age||age>=c.min&&age<=c.max)&&(!g||c.gender==='Unisex'||c.gender===g));
+ currentShop=id;
+ msg(`Showing ${clothes.length} matching item(s) from ${s.name}.`);
+ $('catalog').innerHTML=clothes.map((c,i)=>`<div class="item"><img src="${c.image}"><b>${esc(c.name)}</b><div class="price">₹${c.price}</div><span class="badge">${c.category}</span><br><button onclick='tryOn(${JSON.stringify(c)})'>✨ Try On</button></div>`).join('')||'<p class="muted">No matching clothes. Try another age/gender filter.</p>';
+}
+function tryOn(c){currentCloth=c;$('tryTitle').textContent='AR Try-On: '+c.name;$('tryon').classList.remove('hidden');window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'})}
+async function startAR(){
+ if(!currentCloth)return;
+ if(stream)stopAR();
+ try{
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:mirror?'user':'environment',width:{ideal:1280},height:{ideal:720}},audio:false});
+  $('video').srcObject=stream;
+  await $('video').play();
+  pose=new Pose({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`});
+  pose.setOptions({modelComplexity:1,smoothLandmarks:true,enableSegmentation:false,minDetectionConfidence:.5,minTrackingConfidence:.5});
+  pose.onResults(drawAR);
+  camera=new Camera($('video'),{onFrame:async()=>{await pose.send({image:$('video')})},width:1280,height:720});
+  camera.start();$('arStatus').textContent='Body tracking started. Stand facing the camera.';
+ }catch(e){$('arStatus').textContent='Camera error: '+e.message+' — camera access needs HTTPS or localhost.'}
+}
+function drawAR(res){
+ const v=$('video'),c=$('arCanvas'),ctx=c.getContext('2d');
+ c.width=v.videoWidth||640;c.height=v.videoHeight||480;ctx.clearRect(0,0,c.width,c.height);
+ const lm=res.poseLandmarks;
+ if(!lm){$('arStatus').textContent='Searching for your body…';return}
+ const L=lm[11],R=lm[12];
+ if(!L||!R||L.visibility<.5||R.visibility<.5){$('arStatus').textContent='Show both shoulders to the camera.';return}
+ const lx=L.x*c.width,rx=R.x*c.width,ly=L.y*c.height,ry=R.y*c.height;
+ const cx=(lx+rx)/2,cy=(ly+ry)/2;
+ const sw=Math.hypot(rx-lx,ry-ly);
+ const img=new Image();img.src=currentCloth.image;
+ img.onload=()=>{
+  const targetW=sw*2.05;
+  const targetH=targetW*(img.naturalHeight/img.naturalWidth||1);
+  // place garment slightly below shoulder line
+  ctx.globalAlpha=.94;
+  ctx.drawImage(img,cx-targetW/2,cy-targetH*.18,targetW,targetH);
+  ctx.globalAlpha=1;
+ };
+ $('arStatus').textContent='✓ Shoulders detected — clothing is tracking your movement.';
+}
+function stopAR(){
+ if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+ if(camera)camera.stop();camera=null;pose=null;
+ $('arCanvas').getContext('2d').clearRect(0,0,$('arCanvas').width,$('arCanvas').height);
+}
+function flipCamera(){mirror=!mirror;stopAR();startAR()}
+function openScanner(){
+ $('scanner').classList.remove('hidden'); startQRScan();
+}
+function closeScanner(){
+ $('scanner').classList.add('hidden');
+ if(qrStream){qrStream.getTracks().forEach(t=>t.stop());qrStream=null}
+}
+async function startQRScan(){
+ try{
+  qrStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
+  $('qrVideo').srcObject=qrStream;
+  const v=$('qrVideo'),can=$('qrCanvas'),ctx=can.getContext('2d');
+  const loop=()=>{if(!qrStream)return; if(v.readyState>=2){can.width=v.videoWidth;can.height=v.videoHeight;ctx.drawImage(v,0,0,can.width,can.height);const d=ctx.getImageData(0,0,can.width,can.height);const code=jsQR(d.data,d.width,d.height);if(code){let u=code.data;try{const x=new URL(u);const s=x.searchParams.get('shop');if(s){$('shopId').value=s;closeScanner();loadShop();return}}catch(e){}$('scanMsg').textContent='QR found, but it is not a ClothAR shop QR.'}}requestAnimationFrame(loop)};loop();
+ }catch(e){$('scanMsg').textContent='Camera error: '+e.message}
+}
+function downloadQR(){const img=$('qr').querySelector('img');if(!img)return;const a=document.createElement('a');a.href=img.src;a.download=currentShop+'-QR.png';a.click()}
+function resetAll(){if(confirm('Delete all demo shops and clothes from this browser?')){localStorage.removeItem(KEY);location.reload()}}
+(function init(){
+ const s=new URLSearchParams(location.search).get('shop');if(s){$('shopId').value=s;msg('Shop QR opened. Enter age and gender, then tap Load Shop.')}
+})();
+</script>
+</body>
+</html>
